@@ -69,14 +69,19 @@ IEEE-CIS 각 항목의 조작 가능 여부는 `config/constraints.yaml`에 정�
 ## 구조
 
 ```
-config/     제약 정의, 모델·공격 설정
+.venv/          가상환경
+config/         제약 정의, 모델·공격 설정
+datasets/       원본 데이터 (git 제외)
+docs/           연구 계획서, feature 분류 근거
 src/
-  data/     로딩, 시간순 분할
-  models/   탐지 모델 학습, 임계값 결정
-  attacks/  규칙 기반, Decision-Based, 제약 강제
-  defense/  적대적 학습
-  eval/     지표, 전이성
-notebooks/  feature 분석, 결과 시각화
+  data/         로딩, 시간순 분할
+  models/       탐지 모델 학습, 임계값 결정
+  attacks/      규칙 기반, Decision-Based, 제약 강제
+  defense/      적대적 학습
+  eval/         지표, 전이성
+scripts/        실험 실행 진입점
+notebooks/      탐색적 분석, 결과 시각화
+results/        실험 결과 (git 제외)
 ```
 
 ---
