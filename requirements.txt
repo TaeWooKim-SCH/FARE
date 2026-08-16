@@ -1,0 +1,12 @@
+# FARE 실행 환경 — Python 3.12
+#
+# 지금 단계(데이터 열어보기 → feature 3분류 → feature-taxonomy.md → constraints.yaml)에
+# 필요한 최소 의존성만 담았다. 탐지 모델 단계에서 xgboost / scikit-learn /
+# adversarial-robustness-toolbox를 그 이슈에서 추가한다.
+#
+# 버전은 2026-08 기준 .venv에 실제 설치된 값이다. 모델 단계에서 시드 재현성이
+# 걸리면 그때 transitive 의존성까지 하드 락:
+#   python -m pip freeze > requirements.lock.txt
+
+pandas==3.0.5     # 데이터 로딩, 컬럼 확인, TransactionDT 시간순 분할
+PyYAML==6.0.3     # config/constraints.yaml 읽고 쓰기
