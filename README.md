@@ -60,7 +60,7 @@ IEEE-CIS 각 항목의 조작 가능 여부는 `config/constraints.yaml`에 정�
 
 [IEEE-CIS Fraud Detection](https://www.kaggle.com/c/ieee-fraud-detection) — 590,540건, 사기율 3.5%, 393개 feature.
 
-저장소에 포함하지 않는다. Kaggle에서 받아 `data/raw/`에 둔다.
+저장소에 포함하지 않는다. Kaggle에서 받아 `datasets/`에 둔다.
 
 이후 BAF(은행 계좌), Elliptic(암호화폐 그래프)으로 확장 예정. 데이터 로딩 계층을 분리해 나머지 파이프라인을 재사용할 수 있게 작성한다.
 
