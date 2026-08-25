@@ -1,0 +1,27 @@
+# 데이터 로딩과 분할 설정.
+# 시드와 비율은 코드에 박지 않고 여기서만 바꾼다 (research-experiment 규약).
+
+seed: 42
+
+paths:
+  root: datasets/ieee-cis
+  transaction: train_transaction.csv
+  identity: train_identity.csv
+
+split:
+  # 무작위 분할은 미래 정보가 과거로 새어 모든 지표를 부풀린다. 시간순만 쓴다.
+  time_column: TransactionDT
+
+  # 앞 80%를 학습에 쓰되, 그중 뒤쪽 10%p를 검증셋으로 뗀다.
+  # 검증셋은 운영 임계값 τ를 정하는 데 쓰므로 학습에 노출되면 안 된다.
+  train_ratio: 0.7
+  val_ratio: 0.1
+  # 나머지 0.2가 평가셋
+
+  # 같은 초에 일어난 거래가 5.75% 있어 경계가 그 한가운데 떨어질 수 있다.
+  # 그러면 같은 시각 거래가 학습셋과 평가셋에 갈려 들어간다.
+  # true면 경계를 다음 시각까지 밀어 그런 갈림을 막는다.
+  keep_same_time_together: true
+
+label_column: isFraud
+id_column: TransactionID

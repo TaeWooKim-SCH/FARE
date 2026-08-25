@@ -7,7 +7,9 @@ datasets/*
 !datasets/.gitkeep
 
 # 중간 산출물
-data/
+# data/ 는 맨 앞에 /를 붙여 최상위만 가리킨다. 안 붙이면 하위 경로의 같은 이름도
+# 전부 잡아서 소스 코드인 src/data/ 까지 무시된다.
+/data/
 outputs/
 results/
 checkpoints/
