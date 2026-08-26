@@ -66,6 +66,18 @@ def column_profile(df: pd.DataFrame, exclude: tuple[str, ...] = DEFAULT_EXCLUDE)
     return pd.DataFrame(rows)
 
 
+def constant_columns(profile: pd.DataFrame) -> list[str]:
+    """값이 한 종류뿐인 컬럼.
+
+    트리 모델은 이 컬럼으로 분기를 만들 수 없어 버리든 두든 출력이 같고, 스케일러는
+    표준편차가 0이라 나눗셈에서 터진다. 어떤 컬럼이 여기 해당하는지는 학습셋 기준으로
+    판정해야 한다 — 전체를 보고 정하면 그 판단 자체가 미래를 본 것이 된다.
+    """
+    if "nunique" not in profile.columns or "column" not in profile.columns:
+        raise KeyError("column_profile()이 낸 결과를 넣어야 합니다(column·nunique 필요).")
+    return sorted(profile.loc[profile["nunique"] <= 1, "column"].tolist())
+
+
 def _mask_key(mask: pd.Series) -> str:
     """결측 마스크를 해시로 줄인다. 결측 '개수'가 같아도 위치가 다르면 다른 블록이다."""
     return hashlib.md5(mask.to_numpy().tobytes()).hexdigest()

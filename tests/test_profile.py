@@ -8,7 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.eda.profile import column_profile, missing_pattern_blocks, productcd_gating
+from src.eda.profile import (
+    column_profile,
+    constant_columns,
+    missing_pattern_blocks,
+    productcd_gating,
+)
 
 
 def test_값이_한_종류뿐인_컬럼은_고유값이_1로_잡힌다():
@@ -56,6 +61,27 @@ def test_식별자와_라벨은_프로파일_대상이_아니다():
 def test_빈_데이터프레임은_거부한다():
     with pytest.raises(ValueError, match="빈 데이터프레임"):
         column_profile(pd.DataFrame({"a": []}))
+
+
+def test_값이_한_종류뿐인_컬럼만_상수로_뽑는다():
+    frame = pd.DataFrame({"const": [1.0, 1.0, 1.0], "varies": [1.0, 2.0, 3.0]})
+    assert constant_columns(column_profile(frame)) == ["const"]
+
+
+def test_상수가_없으면_빈_목록을_준다():
+    frame = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+    assert constant_columns(column_profile(frame)) == []
+
+
+def test_결측만_있는_컬럼도_상수로_잡는다():
+    # 고유값이 0개라 분기도 스케일링도 불가능하다. 값이 하나인 것과 같이 다룬다.
+    frame = pd.DataFrame({"empty": [np.nan, np.nan], "a": [1.0, 2.0]})
+    assert constant_columns(column_profile(frame)) == ["empty"]
+
+
+def test_프로파일이_아닌_표를_넣으면_거부한다():
+    with pytest.raises(KeyError, match="column_profile"):
+        constant_columns(pd.DataFrame({"아무거나": [1]}))
 
 
 def test_결측_개수가_같아도_위치가_다르면_다른_블록이다():

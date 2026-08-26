@@ -30,12 +30,12 @@ for stream in (sys.stdout, sys.stderr):
 
 from src.data.loader import load_config, load_identity, load_transactions  # noqa: E402
 from src.data.split import time_split  # noqa: E402
-from src.eda.profile import column_profile, missing_pattern_blocks, productcd_gating  # noqa: E402
-
-
-def constant_columns(profile: pd.DataFrame) -> list[str]:
-    """값이 한 종류뿐인 컬럼. 트리 모델은 분기를 못 만들고, 스케일러는 0으로 나눈다."""
-    return sorted(profile.loc[profile["nunique"] <= 1, "column"].tolist())
+from src.eda.profile import (  # noqa: E402
+    column_profile,
+    constant_columns,
+    missing_pattern_blocks,
+    productcd_gating,
+)
 
 
 def build_summary(
