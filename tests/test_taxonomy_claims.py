@@ -218,6 +218,90 @@ def test_금액은_모두_양수다(tx):
     assert (tx["TransactionAmt"] > 0).all()
 
 
+# ── 6. 시각 이동이 D를 건드리는 경계 ───────────────────────────────────────
+
+
+def make_uid(frame: pd.DataFrame) -> pd.Series:
+    """부록 C가 정의한 대리 키. 카드 식별자가 없어 이 조합으로 대신한다."""
+    day = frame["TransactionDT"] // 86400
+    return (
+        frame["card1"].astype(str) + "_" + frame["addr1"].astype(str) + "_" + (day - frame["D1"]).astype(str)
+    )
+
+
+@needs_data
+def test_D3의_하루는_달력이_아니라_직전거래_기준_반올림이다(tx):
+    """이 경계를 놓치면 '같은 날 시 이동은 D8·D9만 갱신하면 된다'가 틀린 전제가 된다."""
+    ordered = tx.assign(_uid=make_uid(tx)).sort_values("TransactionDT", kind="mergesort")
+    prev = ordered.groupby("_uid", sort=False)["TransactionDT"].shift(1)
+    elapsed_days = (ordered["TransactionDT"] - prev) / 86400
+    m = elapsed_days.notna() & ordered["D3"].notna()
+    d3, gap = ordered.loc[m, "D3"], elapsed_days[m]
+
+    round_match = float((d3 == np.round(gap)).mean())
+    floor_match = float((d3 == np.floor(gap)).mean())
+    assert round_match > 0.92
+    assert floor_match < 0.60
+    assert round_match > floor_match
+
+
+@needs_data
+def test_같은_날짜인데_12시간_넘게_벌어지면_D3이_1이_된다(tx):
+    # 달력 기준이라면 같은 UTC 날짜에서는 D3이 0이어야 한다. 실제로는 92% 넘게 1이다.
+    frame = tx.assign(_uid=make_uid(tx), _day=tx["TransactionDT"] // 86400)
+    ordered = frame.sort_values("TransactionDT", kind="mergesort")
+    grouped = ordered.groupby("_uid", sort=False)
+    prev_dt = grouped["TransactionDT"].shift(1)
+    prev_day = grouped["_day"].shift(1)
+    gap_days = (ordered["TransactionDT"] - prev_dt) / 86400
+
+    same_day_far = (ordered["_day"] == prev_day) & (gap_days > 0.5) & ordered["D3"].notna()
+    assert int(same_day_far.sum()) > 3_000
+    assert float((ordered.loc[same_day_far, "D3"] == 1).mean()) > 0.90
+
+
+# ── 7. 금액형 V 부등식은 검사로 쓸 수 없다 ─────────────────────────────────
+
+AMOUNT_V = (
+    [f"V{i}" for i in range(126, 138)]
+    + [f"V{i}" for i in range(159, 167)]
+    + [f"V{i}" for i in range(202, 217)]
+    + [f"V{i}" for i in range(263, 279)]
+    + [f"V{i}" for i in range(306, 322)]
+    + [f"V{i}" for i in range(331, 340)]
+)
+
+
+@needs_data
+def test_금액형_V는_76개다(tx):
+    assert len(AMOUNT_V) == 76
+    assert set(AMOUNT_V) <= set(tx.columns)
+
+
+@needs_data
+def test_금액형V_부등식은_원본에서_이미_20퍼센트가_깨져있다(tx):
+    """오탐 20%짜리 검사다. 제약 검증 함수에 넣으면 정상 거래 11만 행을 조작으로 찍는다."""
+    amounts = tx["TransactionAmt"].to_numpy()
+    values = tx[AMOUNT_V].to_numpy()
+    violated = (values > 0) & (values < amounts[:, None])
+    any_violated = violated.any(axis=1)
+
+    assert float(any_violated.mean()) == pytest.approx(0.2008, abs=1e-3)
+    assert float(any_violated[tx["isFraud"] == 1].mean()) == pytest.approx(0.2944, abs=1e-3)
+
+
+@needs_data
+def test_금액을_낮추면_새_위반이_생기지_않는다(tx):
+    # 공격의 자연스러운 방향(금액 하향)에서는 이 부등식이 제약이 되지 않는다.
+    amounts = tx["TransactionAmt"].to_numpy()
+    values = tx[AMOUNT_V].to_numpy()
+    positive = values > 0
+    before = (positive & (values < amounts[:, None])).any(axis=1)
+    for factor in (0.5, 0.9, 1.0):
+        after = (positive & (values < (amounts * factor)[:, None])).any(axis=1)
+        assert int((after & ~before).sum()) == 0
+
+
 # ── 5. D 음수는 정상 데이터다 ──────────────────────────────────────────────
 
 
