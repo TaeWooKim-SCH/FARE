@@ -221,22 +221,33 @@ def test_금액은_모두_양수다(tx):
 # ── 6. 시각 이동이 D를 건드리는 경계 ───────────────────────────────────────
 
 
-def make_uid(frame: pd.DataFrame) -> pd.Series:
-    """부록 C가 정의한 대리 키. 카드 식별자가 없어 이 조합으로 대신한다."""
-    day = frame["TransactionDT"] // 86400
-    return (
-        frame["card1"].astype(str) + "_" + frame["addr1"].astype(str) + "_" + (day - frame["D1"]).astype(str)
-    )
+@pytest.fixture(scope="module")
+def gaps(tx) -> pd.DataFrame:
+    """uid별로 직전 거래와의 간격을 붙인 좁은 표.
+
+    394열짜리 원본에 컬럼을 덧붙이면 pandas가 조각난 프레임을 만들어 경고를 낸다.
+    필요한 다섯 열만 새 표로 만들면 그 문제도 없고 정렬도 훨씬 빠르다.
+
+    uid는 부록 C의 정의를 따른다 — card1 + addr1 + (거래일 - D1).
+    """
+    day = tx["TransactionDT"] // 86400
+    uid = tx["card1"].astype(str) + "_" + tx["addr1"].astype(str) + "_" + (day - tx["D1"]).astype(str)
+    frame = pd.DataFrame(
+        {"dt": tx["TransactionDT"], "day": day, "d3": tx["D3"], "uid": uid}
+    ).sort_values("dt", kind="mergesort")
+
+    grouped = frame.groupby("uid", sort=False)
+    frame["prev_dt"] = grouped["dt"].shift(1)
+    frame["prev_day"] = grouped["day"].shift(1)
+    frame["elapsed_days"] = (frame["dt"] - frame["prev_dt"]) / 86400
+    return frame
 
 
 @needs_data
-def test_D3의_하루는_달력이_아니라_직전거래_기준_반올림이다(tx):
+def test_D3의_하루는_달력이_아니라_직전거래_기준_반올림이다(gaps):
     """이 경계를 놓치면 '같은 날 시 이동은 D8·D9만 갱신하면 된다'가 틀린 전제가 된다."""
-    ordered = tx.assign(_uid=make_uid(tx)).sort_values("TransactionDT", kind="mergesort")
-    prev = ordered.groupby("_uid", sort=False)["TransactionDT"].shift(1)
-    elapsed_days = (ordered["TransactionDT"] - prev) / 86400
-    m = elapsed_days.notna() & ordered["D3"].notna()
-    d3, gap = ordered.loc[m, "D3"], elapsed_days[m]
+    m = gaps["elapsed_days"].notna() & gaps["d3"].notna()
+    d3, gap = gaps.loc[m, "d3"], gaps.loc[m, "elapsed_days"]
 
     round_match = float((d3 == np.round(gap)).mean())
     floor_match = float((d3 == np.floor(gap)).mean())
@@ -246,18 +257,13 @@ def test_D3의_하루는_달력이_아니라_직전거래_기준_반올림이다
 
 
 @needs_data
-def test_같은_날짜인데_12시간_넘게_벌어지면_D3이_1이_된다(tx):
+def test_같은_날짜인데_12시간_넘게_벌어지면_D3이_1이_된다(gaps):
     # 달력 기준이라면 같은 UTC 날짜에서는 D3이 0이어야 한다. 실제로는 92% 넘게 1이다.
-    frame = tx.assign(_uid=make_uid(tx), _day=tx["TransactionDT"] // 86400)
-    ordered = frame.sort_values("TransactionDT", kind="mergesort")
-    grouped = ordered.groupby("_uid", sort=False)
-    prev_dt = grouped["TransactionDT"].shift(1)
-    prev_day = grouped["_day"].shift(1)
-    gap_days = (ordered["TransactionDT"] - prev_dt) / 86400
-
-    same_day_far = (ordered["_day"] == prev_day) & (gap_days > 0.5) & ordered["D3"].notna()
+    same_day_far = (
+        (gaps["day"] == gaps["prev_day"]) & (gaps["elapsed_days"] > 0.5) & gaps["d3"].notna()
+    )
     assert int(same_day_far.sum()) > 3_000
-    assert float((ordered.loc[same_day_far, "D3"] == 1).mean()) > 0.90
+    assert float((gaps.loc[same_day_far, "d3"] == 1).mean()) > 0.90
 
 
 # ── 7. 금액형 V 부등식은 검사로 쓸 수 없다 ─────────────────────────────────
