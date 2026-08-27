@@ -70,7 +70,7 @@ def load_merged(cfg: dict | None = None, nrows: int | None = None) -> pd.DataFra
 
     identity는 거래의 24.4%에만 있다. 없는 쪽을 버리면 데이터의 3/4가 날아가므로
     왼쪽 조인으로 결측을 남긴다. 결측 처리 방식은 모델 단계에서 정한다
-    (feature-taxonomy.md 6절).
+    (feature-taxonomy.md 5절).
     """
     cfg = cfg or load_config()
     tx = load_transactions(cfg, nrows=nrows)
