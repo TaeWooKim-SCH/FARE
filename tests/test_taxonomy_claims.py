@@ -1,4 +1,4 @@
-"""feature-taxonomy.md 부록의 핵심 주장을 실제 데이터로 검증한다.
+"""문서에 적어둔 핵심 주장을 실제 데이터로 검증한다.
 
 문서에 적힌 수치가 `config/constraints.yaml`과 공격 코드로 흘러가므로, 틀리면 아래로
 전부 번진다. 이 테스트가 깨지면 문서가 틀렸거나 데이터가 바뀐 것이고, 둘 다 조용히
@@ -228,7 +228,7 @@ def gaps(tx) -> pd.DataFrame:
     394열짜리 원본에 컬럼을 덧붙이면 pandas가 조각난 프레임을 만들어 경고를 낸다.
     필요한 다섯 열만 새 표로 만들면 그 문제도 없고 정렬도 훨씬 빠르다.
 
-    uid는 부록 C의 정의를 따른다 — card1 + addr1 + (거래일 - D1).
+    uid는 column-reference.md의 정의를 따른다 — card1 + addr1 + (거래일 - D1).
     """
     day = tx["TransactionDT"] // 86400
     uid = tx["card1"].astype(str) + "_" + tx["addr1"].astype(str) + "_" + (day - tx["D1"]).astype(str)

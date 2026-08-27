@@ -1,6 +1,6 @@
 """컬럼 프로파일.
 
-feature-taxonomy.md 부록 A·C의 서술 통계를 코드로 다시 만든다. 문서에 적힌 수치는
+column-reference.md에 적어둔 컬럼별 수치를 코드로 다시 만든다. 문서에 적힌 수치는
 일회성 스크립트로 뽑은 값이라 재현되지 않았고, 그 수치가 constraints.yaml과 공격
 코드로 흘러가므로 틀리면 아래로 전부 번진다.
 
@@ -129,7 +129,7 @@ def productcd_gating(
 
     ProductCD가 feature의 존재 자체를 가른다. 이 비대칭 때문에 D9 기반 정합성 검사가
     W에서는 발동조차 하지 않으므로, 실험 결과를 상품별로 쪼개 보고해야 한다
-    (feature-taxonomy.md 6절).
+    (feature-taxonomy.md 5절).
     """
     if group_column not in df.columns:
         raise KeyError(f"{group_column} 컬럼이 없습니다.")

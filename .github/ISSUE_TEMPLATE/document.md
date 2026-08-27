@@ -11,6 +11,8 @@ labels: documentation
 
 - [ ] `docs/research-plan.md`
 - [ ] `docs/feature-taxonomy.md`
+- [ ] `docs/attack-constraints.md`
+- [ ] `docs/column-reference.md`
 - [ ] `README.md`
 - [ ] 기타:
 
