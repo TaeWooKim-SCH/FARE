@@ -1,13 +1,15 @@
 # FARE 실행 환경 — Python 3.12
 #
-# 지금 단계(데이터 열어보기 → feature 3분류 → feature-taxonomy.md → constraints.yaml)에
-# 필요한 최소 의존성만 담았다. 탐지 모델 단계에서 xgboost / scikit-learn /
-# adversarial-robustness-toolbox를 그 이슈에서 추가한다.
+# 공격 단계에서 adversarial-robustness-toolbox를 그 이슈에서 추가한다.
 #
-# 버전은 2026-08 기준 .venv에 실제 설치된 값이다. 모델 단계에서 시드 재현성이
-# 걸리면 그때 transitive 의존성까지 하드 락:
+# 버전은 2026-08 기준 .venv에 실제 설치된 값이다. 시드 재현성이 걸리면
+# 그때 transitive 의존성까지 하드 락:
 #   python -m pip freeze > requirements.lock.txt
 
 pandas==3.0.5     # 데이터 로딩, 컬럼 확인, TransactionDT 시간순 분할
-PyYAML==6.0.3     # config/constraints.yaml 읽고 쓰기
+PyYAML==6.0.3     # config/*.yaml 읽기
 pytest==9.1.1     # 시간순 분할과 taxonomy 수치를 코드로 고정
+
+# 성능 지표
+scikit-learn==1.9.0   # PR-AUC·ROC-AUC와 임계값 후보 계산. 3종 모델 비교에서 RF·MLP도 여기서 온다
+numpy==2.5.2          # sklearn이 끌고 오지만, 점수 계산에 직접 쓰므로 명시한다
