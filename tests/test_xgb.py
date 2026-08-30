@@ -4,6 +4,9 @@
 성능은 실제 데이터로만 의미가 있어서 여기서 재지 않는다.
 """
 
+import tempfile
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -103,6 +106,30 @@ def test_분기_횟수와_총_기여를_함께_돌려준다():
     assert imp["total_gain_share"].sum() == pytest.approx(1.0)
     # a로만 정답을 만들었으니 a가 1등이어야 한다
     assert imp.iloc[0]["feature"] == "a"
+
+
+def test_저장한_파일을_그냥_불러도_같은_점수가_나온다():
+    """조기 종료가 남긴 안 쓸 나무를 안 자르면, 같은 파일인데 부르는 방법에 따라 점수가 달라진다.
+
+    공격 단계에서 이 파일을 불러다 쓰므로, 어긋나면 회피율이 미묘하게 안 맞는다.
+    """
+    import xgboost as xgb
+
+    X, y = make_xy(n=1200, seed=3)
+    t = train_xgb(X[:900], y[:900], X[900:], y[900:], CONFIG)
+    expected = t.score(X[900:])
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "m.ubj"
+        kept = t.save(path)
+        assert kept == t.best_iteration + 1
+
+        booster = xgb.Booster()
+        booster.load_model(str(path))
+        assert booster.num_boosted_rounds() == kept
+        got = booster.predict(xgb.DMatrix(X[900:]))
+
+    assert np.allclose(expected, got, atol=1e-6)
 
 
 def test_안_쓴_컬럼도_0으로_남는다():

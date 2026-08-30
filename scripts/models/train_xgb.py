@@ -141,11 +141,14 @@ def main(final: bool) -> None:
         "top_features": imp.to_dict("records"),
     }
     stem = "xgboost_baseline" if final else "xgboost_val_only"
+    model_path = OUT_DIR / f"{stem}.ubj"
+    kept = trained.save(model_path)
+    payload["model"]["saved_trees"] = kept
+
     out = OUT_DIR / f"{stem}.json"
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    trained.model.save_model(OUT_DIR / f"{stem}.ubj")
     print(f"\n저장: {out.relative_to(REPO_ROOT)}")
-    print(f"      {(OUT_DIR / f'{stem}.ubj').relative_to(REPO_ROOT)}")
+    print(f"      {model_path.relative_to(REPO_ROOT)}  (나무 {kept:,}그루만 남김)")
 
 
 if __name__ == "__main__":

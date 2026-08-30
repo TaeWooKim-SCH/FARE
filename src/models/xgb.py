@@ -37,6 +37,22 @@ class TrainedModel:
         # best_iteration까지만 쓴다. 그 뒤 나무는 검증셋에서 더 나빠진 구간이다.
         return self.model.predict_proba(X)[:, 1]
 
+    def save(self, path) -> int:
+        """쓸 나무만 잘라서 저장한다. 몇 그루를 남겼는지 돌려준다.
+
+        조기 종료는 최선을 찍은 **뒤에도** `early_stopping_rounds`만큼 더 그려보고 멈춘다.
+        그래서 학습이 끝난 booster에는 안 쓸 나무가 그만큼 더 들어 있다. 실제로 첫 실행에서
+        1,686그루가 남았는데 쓰는 것은 1,586그루였다.
+
+        `XGBClassifier.predict_proba`는 알아서 잘라 쓰지만, 저장한 파일을 `Booster`로 직접
+        불러 `predict()`를 부르면 안 쓸 나무까지 다 쓴다. 그러면 같은 파일인데 부르는 방법에
+        따라 점수가 달라진다(평가셋 Recall이 0.6001 대 0.5967로 갈렸다). 공격 단계에서 이
+        파일을 불러 쓸 것이라, 파일 자체를 잘라두어야 어느 쪽으로 불러도 같은 값이 나온다.
+        """
+        keep = self.best_iteration + 1
+        self.model.get_booster()[:keep].save_model(str(path))
+        return keep
+
 
 def train_xgb(
     X_train: pd.DataFrame,
