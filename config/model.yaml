@@ -1,0 +1,28 @@
+# 탐지 모델 설정. 하이퍼파라미터를 코드에 박지 않고 여기서만 바꾼다.
+# 실험 결과를 저장할 때 이 파일 내용을 함께 남겨야 나중에 재현된다.
+
+seed: 42
+
+xgboost:
+  # 나무를 몇 그루까지 쌓을지. 아래 early_stopping이 먼저 멈추면 여기까지 안 간다.
+  n_estimators: 2000
+  learning_rate: 0.05
+  max_depth: 8
+  min_child_weight: 4
+  subsample: 0.8
+  colsample_bytree: 0.8
+  reg_lambda: 1.0
+
+  # 검증셋 aucpr이 이만큼 안 좋아지면 멈춘다. 불균형 데이터라 logloss 대신 aucpr을 본다.
+  early_stopping_rounds: 100
+  eval_metric: aucpr
+
+  # 사기가 3.5%뿐이라 양성 가중치를 올리고 싶어지는데, 쓰지 않는다.
+  # 가중치로 한 번 밀고 임계값으로 또 미는 것은 같은 조정을 두 번 하는 셈이고,
+  # 확률값이 실제 사기율에서 멀어져 τ의 뜻이 흐려진다. 불균형은 τ로만 다룬다.
+  scale_pos_weight: 1.0
+
+threshold:
+  # 사기를 놓치는 쪽이 헛짚는 쪽보다 비싸다는 판단 (research-plan.md 4.3).
+  # beta=2면 Recall을 Precision보다 2배로 친다.
+  beta: 2.0
