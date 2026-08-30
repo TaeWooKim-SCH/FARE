@@ -25,10 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import pandas as pd
 
 from src.data.loader import REPO_ROOT, load_config, load_merged
-from src.data.split import time_split
+from src.data.split import split_tail, time_split
 from src.models.metrics import choose_threshold, evaluate_at, rank_metrics
 from src.models.preprocess import fit_preprocessor, target_of
-from src.models.xgb import feature_importance, train_xgb
+from src.models.xgb import feature_importance, refit_on_all, train_xgb
 
 OUT_DIR = REPO_ROOT / "results" / "models"
 
@@ -41,11 +41,15 @@ def main(final: bool) -> None:
     frame = load_merged(data_cfg)
     split = time_split(frame, data_cfg)
 
-    parts = {"train": split.train, "val": split.val}
+    # 학습셋을 다시 시간순으로 갈라, 앞쪽으로 나무를 그리고 뒤쪽으로 멈출 시점을 정한다.
+    # 검증셋은 τ를 정하는 데만 쓴다.
+    fit_part, stop_part = split_tail(split.train, model_cfg["early_stop_ratio"], data_cfg)
+
+    parts = {"fit": fit_part, "stop": stop_part, "train": split.train, "val": split.val}
     if final:
         parts["test"] = split.test
 
-    # 규칙은 학습셋에서만 만든다. 검증셋·평가셋에는 적용만 한다.
+    # 규칙은 학습셋에서만 만든다. 나머지에는 적용만 한다.
     pre = fit_preprocessor(split.train)
     X = {name: pre.apply(part) for name, part in parts.items()}
     y = {name: target_of(part) for name, part in parts.items()}
@@ -54,10 +58,17 @@ def main(final: bool) -> None:
     if not final:
         print("  (평가셋은 안 읽는다. 최종 수치를 낼 때 --final로 연다)")
 
-    print("학습 중...")
-    trained = train_xgb(X["train"], y["train"], X["val"], y["val"], model_cfg)
-    print(f"  나무 {trained.best_iteration + 1}그루에서 멈춤 "
-          f"(최대 {model_cfg['xgboost']['n_estimators']})")
+    # 1단계: 나무를 몇 그루 쌓을지만 정한다. 검증셋은 안 쓴다.
+    print("나무 수를 정하는 중...")
+    probe = train_xgb(X["fit"], y["fit"], X["stop"], y["stop"], model_cfg)
+    trees = probe.best_iteration + 1
+    print(f"  {trees:,}그루 (최대 {model_cfg['xgboost']['n_estimators']:,}, "
+          f"{probe.fit_rows:,}행으로 그리고 {probe.stop_rows:,}행으로 판단)")
+
+    # 2단계: 그 수를 고정해 학습셋 전체로 다시 학습한다.
+    # 1단계 모델을 그대로 쓰면 떼어낸 62,006행만큼 손해다(평가셋 PR-AUC 0.5468 -> 0.5116).
+    print(f"학습셋 전체 {len(X['train']):,}행으로 다시 학습 중...")
+    trained = refit_on_all(X["train"], y["train"], trees, model_cfg)
 
     # τ를 먼저 정하고 나서 평가셋 점수를 낸다. 순서만 봐도 평가셋이 τ에 안 닿는 게 보인다.
     val_score = trained.score(X["val"])
@@ -127,9 +138,15 @@ def main(final: bool) -> None:
         },
         "model": {
             "params": {k: v for k, v in trained.params.items()},
-            "best_iteration": trained.best_iteration,
-            "train_rows": trained.train_rows,
-            "val_rows": trained.val_rows,
+            "trees": trained.best_iteration + 1,
+            "tree_source": trained.tree_source,
+            "fit_rows": trained.fit_rows,
+            # 나무 수는 학습셋 뒤쪽 조각으로 정했다. 검증셋은 τ에만 쓴다.
+            "trees_chosen_on": {
+                "fit_rows": probe.fit_rows,
+                "stop_rows": probe.stop_rows,
+                "early_stop_ratio": model_cfg["early_stop_ratio"],
+            },
         },
         "threshold": {
             "tau": tau.tau, "beta": tau.beta, "chosen_on": "val",

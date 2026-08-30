@@ -91,6 +91,45 @@ def time_split(df: pd.DataFrame, cfg: dict | None = None) -> Split:
     return split
 
 
+def split_tail(
+    frame: pd.DataFrame, ratio: float, cfg: dict | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """시간순으로 뒤쪽 `ratio`만큼을 떼어낸다. 앞쪽과 뒤쪽을 돌려준다.
+
+    학습셋에서 조기 종료용 조각을 만드는 데 쓴다. **검증셋은 운영 임계값 τ를 정하는 데만
+    써야 한다.** 조기 종료까지 검증셋으로 하면, τ를 정하는 데이터가 이미 모델을 고르는 데
+    쓰인 셈이 되어 검증셋 숫자가 부풀려진다. 첫 실행에서 나무 수를 잘라가며 재보니 평가셋
+    PR-AUC는 800그루에서 꼭대기를 찍고 내려가는데 검증셋은 끝까지 올라, 1,586그루까지
+    갔다. 그 사이에 벌어진 만큼이 부풀려진 몫이다.
+
+    떼어낸 조각도 시간순으로 뒤쪽이다. 무작위로 뽑으면 미래가 학습 쪽으로 샌다.
+    """
+    cfg = cfg or load_config()
+    conf = cfg["split"]
+    time_column = conf["time_column"]
+
+    if not 0 < ratio < 1:
+        raise ValueError(f"비율이 잘못됐습니다: {ratio}. 0보다 크고 1보다 작아야 합니다.")
+    if time_column not in frame.columns:
+        raise KeyError(f"{time_column} 컬럼이 없습니다. 분할 기준 시각이 있어야 합니다.")
+
+    ordered = frame.sort_values(time_column, kind="mergesort").reset_index(drop=True)
+    n = len(ordered)
+    cut = n - int(n * ratio)
+    if conf.get("keep_same_time_together", True):
+        cut = _advance_past_ties(ordered[time_column], cut)
+
+    head, tail = ordered.iloc[:cut].copy(), ordered.iloc[cut:].copy()
+    if head.empty or tail.empty:
+        raise ValueError(
+            f"{n:,}행을 {ratio}로 나누면 한쪽이 빕니다. 비율이나 입력 크기를 확인하세요."
+        )
+    last, first = head[time_column].max(), tail[time_column].min()
+    if last >= first:
+        raise AssertionError(f"앞뒤 시각이 겹칩니다: {last} >= {first}. 미래 정보가 과거로 샙니다.")
+    return head, tail
+
+
 def _assert_ordered(split: Split, time_column: str) -> None:
     """미래가 과거로 새지 않았는지 확인한다. 이 검사가 깨지면 실험 결과가 무효다."""
     for earlier, later, name in (
