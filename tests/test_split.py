@@ -6,7 +6,7 @@
 import pandas as pd
 import pytest
 
-from src.data.split import time_split
+from src.data.split import split_tail, time_split
 
 BASE_CONFIG = {
     "split": {
@@ -125,3 +125,70 @@ def test_기준_시각_컬럼이_없으면_분할을_거부한다():
 def test_평가셋이_남지_않는_비율은_거부한다():
     with pytest.raises(ValueError, match="비율"):
         time_split(make_frame(range(100)), make_config(train_ratio=0.9, val_ratio=0.2))
+
+
+# ── 학습셋에서 조기 종료용 조각 떼기 ───────────────────────────────────────
+
+
+def test_뒤쪽을_떼어낸다():
+    head, tail = split_tail(make_frame(range(100)), 0.2, make_config())
+    assert len(head) == 80
+    assert len(tail) == 20
+    assert head["TransactionDT"].max() < tail["TransactionDT"].min()
+
+
+def test_뗀_조각도_시간순으로_뒤쪽이다():
+    """무작위로 뽑으면 미래가 학습 쪽으로 샌다."""
+    head, tail = split_tail(make_frame(range(100)), 0.3, make_config())
+    assert set(tail["TransactionDT"]) == set(range(70, 100))
+
+
+def test_입력이_섞여_있어도_시간순으로_가른다():
+    frame = make_frame([5, 1, 9, 3, 7, 2, 8, 4, 6, 0])
+    head, tail = split_tail(frame, 0.3, make_config())
+    assert head["TransactionDT"].max() < tail["TransactionDT"].min()
+    assert sorted(tail["TransactionDT"]) == [7, 8, 9]
+
+
+def test_같은_시각이_양쪽으로_갈리지_않는다():
+    """경계가 같은 초 한가운데 떨어지면 그 시각이 끝나는 곳까지 민다.
+
+    비율 0.35면 경계가 index 7, 즉 시각 5인 네 건의 한가운데 떨어진다.
+    밀지 않으면 앞쪽 마지막 시각과 뒤쪽 첫 시각이 둘 다 5가 된다.
+    """
+    frame = make_frame([0, 1, 2, 3, 4, 5, 5, 5, 5, 9])
+    head, tail = split_tail(frame, 0.35, make_config())
+    assert head["TransactionDT"].max() < tail["TransactionDT"].min()
+    assert (head["TransactionDT"] == 5).sum() == 4
+    assert list(tail["TransactionDT"]) == [9]
+
+
+def test_경계가_동점_밖에_떨어지면_그대로_둔다():
+    """밀 필요가 없는데 미는 버그를 잡는다."""
+    frame = make_frame([0, 1, 2, 3, 4, 5, 5, 5, 5, 9])
+    head, tail = split_tail(frame, 0.5, make_config())
+    assert list(head["TransactionDT"]) == [0, 1, 2, 3, 4]
+    assert list(tail["TransactionDT"]) == [5, 5, 5, 5, 9]
+
+
+def test_비율이_범위를_벗어나면_거부한다():
+    for bad in (0, 1, -0.1, 1.5):
+        with pytest.raises(ValueError, match="비율이 잘못됐습니다"):
+            split_tail(make_frame(range(100)), bad, make_config())
+
+
+def test_한쪽이_비면_거부한다():
+    """조각이 비면 조기 종료가 아예 안 걸리거나 학습할 것이 없어진다."""
+    with pytest.raises(ValueError, match="한쪽이 빕니다"):
+        split_tail(make_frame(range(3)), 0.01, make_config())
+
+
+def test_시각_컬럼이_없으면_거부한다():
+    with pytest.raises(KeyError, match="TransactionDT"):
+        split_tail(pd.DataFrame({"isFraud": [0, 1]}), 0.2, make_config())
+
+
+def test_원본을_건드리지_않는다():
+    frame = make_frame([3, 1, 2])
+    split_tail(frame, 0.34, make_config())
+    assert list(frame["TransactionDT"]) == [3, 1, 2]

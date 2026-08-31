@@ -3,9 +3,12 @@
 설정은 `config/model.yaml`에서만 온다. 코드에 숫자를 박으면 결과 파일만 보고는
 어떤 설정으로 나온 값인지 알 수 없다.
 
-**검증셋을 두 번 쓴다.** 학습을 언제 멈출지 정하는 데 쓰고, 임계값 τ를 정하는 데도 쓴다.
-그래서 검증셋 성능은 실제보다 좋게 나온다. 평가셋은 둘 중 어디에도 안 쓰므로 평가셋
-숫자만 보고한다. 논문에도 이 순서를 적는다.
+**이 함수는 검증셋을 안 받는다.** 학습셋을 시간순으로 둘로 갈라, 앞쪽으로 나무를 그리고
+뒤쪽으로 언제 멈출지 정한다. 검증셋은 운영 임계값 τ를 정하는 데만 쓴다.
+
+처음에는 조기 종료도 검증셋으로 했는데, 그러면 τ를 정하는 데이터가 이미 모델을 고르는 데
+쓰인 셈이 된다. 나무 수를 잘라가며 재보니 평가셋 PR-AUC는 800그루에서 꼭대기를 찍고
+내려가는데 검증셋은 끝까지 올라 1,586그루까지 갔다. 그만큼 검증셋 숫자가 부풀려져 있었다.
 """
 
 from __future__ import annotations
@@ -25,8 +28,11 @@ class TrainedModel:
     params: dict
     best_iteration: int
     feature_names: tuple[str, ...]
-    train_rows: int
-    val_rows: int
+    fit_rows: int
+    # 나무 수를 정하는 데 쓴 행 수. 학습셋 전체로 다시 학습한 모델은 수를 밖에서 받으므로 0이다.
+    stop_rows: int
+    # "early_stop"이면 조기 종료가 정했고, "fixed"면 밖에서 받았다.
+    tree_source: str
 
     def score(self, X: pd.DataFrame) -> np.ndarray:
         """사기일 확률을 돌려준다. 0/1 판정은 여기서 하지 않는다 — τ는 밖에서 정한다."""
@@ -54,39 +60,88 @@ class TrainedModel:
         return keep
 
 
-def train_xgb(
-    X_train: pd.DataFrame,
-    y_train,
-    X_val: pd.DataFrame,
-    y_val,
-    config: dict,
-) -> TrainedModel:
-    """학습셋으로 학습하고 검증셋으로 멈출 시점을 정한다.
-
-    평가셋은 이 함수에 들어오지 않는다. 넘길 자리가 없어야 실수로 넣지 못한다.
-    """
-    if list(X_train.columns) != list(X_val.columns):
-        raise ValueError("학습셋과 검증셋의 컬럼이 다릅니다.")
-    if np.asarray(y_train).sum() == 0:
-        raise ValueError("학습셋에 사기 거래가 없습니다.")
-
+def _base_params(config: dict) -> dict:
+    """config에서 설정을 꺼내고, 재현에 필요한 값을 못 박는다."""
     params = dict(config["xgboost"])
     params["random_state"] = config["seed"]
     # 결과가 매번 같게 나와야 한다. 스레드 수가 바뀌면 부동소수점 합산 순서가 달라져
     # 미세하게 결과가 흔들리므로 여기서 못 박는다.
     params.setdefault("n_jobs", 8)
     params.setdefault("objective", "binary:logistic")
+    return params
 
+
+def train_xgb(
+    X_fit: pd.DataFrame,
+    y_fit,
+    X_stop: pd.DataFrame,
+    y_stop,
+    config: dict,
+) -> TrainedModel:
+    """앞쪽으로 나무를 그리고 뒤쪽으로 멈출 시점을 정한다. 둘 다 학습셋에서 나온다.
+
+    검증셋과 평가셋은 이 함수에 들어오지 않는다. 넘길 자리가 없어야 실수로 넣지 못한다.
+    """
+    if list(X_fit.columns) != list(X_stop.columns):
+        raise ValueError("두 조각의 컬럼이 다릅니다.")
+    if np.asarray(y_fit).sum() == 0:
+        raise ValueError("학습 조각에 사기 거래가 없습니다.")
+    if np.asarray(y_stop).sum() == 0:
+        # 멈출 시점을 정할 근거가 없으면 조기 종료가 아무 데서나 걸린다.
+        raise ValueError("조기 종료용 조각에 사기 거래가 없습니다.")
+
+    params = _base_params(config)
     model = XGBClassifier(**params)
-    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+    model.fit(X_fit, y_fit, eval_set=[(X_stop, y_stop)], verbose=False)
 
     return TrainedModel(
         model=model,
         params=params,
         best_iteration=int(getattr(model, "best_iteration", params["n_estimators"] - 1)),
+        feature_names=tuple(X_fit.columns),
+        fit_rows=len(X_fit),
+        stop_rows=len(X_stop),
+        tree_source="early_stop",
+    )
+
+
+def refit_on_all(X_train: pd.DataFrame, y_train, n_estimators: int, config: dict) -> TrainedModel:
+    """나무 수를 고정해 학습셋 전체로 다시 학습한다. 조기 종료를 쓰지 않는다.
+
+    조기 종료용 조각을 학습셋에서 떼면 나무를 그리는 데 쓸 행이 그만큼 준다. 실제로
+    62,006행(15%)이 빠지자 평가셋 PR-AUC가 0.5468에서 0.5116으로 떨어졌다. 나무 수만
+    정하고 전체로 다시 학습하면 그 손실이 사라진다 — 같은 720그루로 전체 학습하니
+    0.5471로 돌아왔고, ROC-AUC는 0.8984에서 0.9051로 오히려 올랐다. 1,586그루는 이미
+    과한 자리였기 때문이다.
+
+    **여기에 검증셋을 넘기면 안 된다.** 나무 수는 이미 정해져 있으므로 검증셋이 할 일이
+    없고, 넘기면 τ를 정할 데이터가 학습에 쓰인 것이 된다.
+
+    나무 수를 351,372행에서 정해 413,378행에 그대로 쓰는 셈이라, 데이터가 늘면 최적
+    나무 수도 늘 수 있다. 비례해서 847그루로 늘려봤더니 PR-AUC 0.5478, ROC 0.9042로
+    거의 같았다. 이 자리에서는 나무 수에 민감하지 않다.
+    """
+    if n_estimators < 1:
+        raise ValueError(f"나무 수가 잘못됐습니다: {n_estimators}")
+    if np.asarray(y_train).sum() == 0:
+        raise ValueError("학습셋에 사기 거래가 없습니다.")
+
+    params = _base_params(config)
+    params["n_estimators"] = n_estimators
+    # 조기 종료를 쓰지 않으므로 관련 설정을 뺀다. 남겨두면 eval_set 없이 학습이 막힌다.
+    params.pop("early_stopping_rounds", None)
+
+    model = XGBClassifier(**params)
+    model.fit(X_train, y_train, verbose=False)
+
+    return TrainedModel(
+        model=model,
+        params=params,
+        best_iteration=n_estimators - 1,
         feature_names=tuple(X_train.columns),
-        train_rows=len(X_train),
-        val_rows=len(X_val),
+        fit_rows=len(X_train),
+        stop_rows=0,
+        tree_source="fixed",
     )
 
 
