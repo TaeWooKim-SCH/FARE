@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.loader import REPO_ROOT, load_config, load_merged
-from src.data.split import Split, split_tail, time_split
+from src.data.split import split_tail, time_split
 from src.models.adapter import PassThrough, fit_pass_through
 from src.models.metrics import choose_threshold, evaluate_at, rank_metrics
 from src.models.preprocess import Preprocessor, fit_preprocessor, target_of
@@ -26,11 +26,26 @@ from src.models.preprocess import Preprocessor, fit_preprocessor, target_of
 OUT_DIR = REPO_ROOT / "results" / "models"
 
 
+def short_path(path: Path) -> str:
+    """저장소 안이면 상대 경로로 줄이고, 밖이면 그대로 보여준다.
+
+    화면에 찍는 용도라 저장소 밖 경로(테스트의 임시 폴더 같은)에서 예외가 나면 안 된다.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 @dataclass(frozen=True)
 class Prepared:
-    """학습 직전 상태. 여기까지는 모델이 무엇이든 똑같다."""
+    """학습 직전 상태. 여기까지는 모델이 무엇이든 똑같다.
 
-    split: Split
+    **자른 조각(`Split`)을 통째로 들고 있지 않는다.** 들고 있으면 `--final`이 아닐 때도
+    `prepared.split.test`로 평가셋에 닿을 수 있다. 여기 남는 평가셋 흔적은 상품별로
+    쪼갤 때 쓰는 `ProductCD` 한 컬럼뿐이고, 그마저 `--final`이 아니면 None이다.
+    """
+
     pre: Preprocessor
     adapter: PassThrough
     X: dict[str, pd.DataFrame]
@@ -38,6 +53,8 @@ class Prepared:
     data_cfg: dict
     model_cfg: dict
     final: bool
+    # 평가셋의 ProductCD. 상품별 기준선을 낼 때만 쓴다(6.1). --final이 아니면 None이다.
+    product: pd.Series | None
 
 
 def prepare(final: bool, stop_split: bool = True) -> Prepared:
@@ -75,8 +92,11 @@ def prepare(final: bool, stop_split: bool = True) -> Prepared:
     if not final:
         print("  (평가셋은 안 읽는다. 최종 수치를 낼 때 --final로 연다)")
 
+    # 상품별로 쪼갤 컬럼만 따로 빼둔다. 평가셋 프레임 자체는 여기서 버린다.
+    product = split.test["ProductCD"] if final and "ProductCD" in split.test else None
+
     return Prepared(
-        split=split, pre=pre, adapter=adapter, X=X, y=y,
+        pre=pre, adapter=adapter, X=X, y=y, product=product,
         data_cfg=data_cfg, model_cfg=model_cfg, final=final,
     )
 
@@ -121,7 +141,7 @@ def report(
         print(f"{name:6s}{m['recall']:>9.4f}{m['precision']:>11.4f}"
               f"{m[f'f{tau.beta:g}']:>8.4f}{m['flag_rate']:>10.4%}{m['fn']:>10,}")
 
-    by_product = _by_product(prepared, y, score, tau) if prepared.final else []
+    by_product = _by_product(prepared, y, score, tau) if prepared.product is not None else []
 
     if importance is not None:
         print(f"\n=== 상위 {len(importance)}개 컬럼 ===")
@@ -151,7 +171,7 @@ def report(
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUT_DIR / f"{stem}.json"
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n저장: {out.relative_to(REPO_ROOT)}")
+    print(f"\n저장: {short_path(out)}")
     return out
 
 
@@ -160,13 +180,13 @@ def _by_product(prepared: Prepared, y: dict, score: dict, tau) -> list[dict]:
 
     전체 숫자만 보면 74%를 차지하는 W에 나머지가 묻힌다.
     """
-    test = prepared.split.test
+    product = prepared.product
     rows = []
     print("\n=== 평가셋 상품별 ===")
     print(f"{'ProductCD':<11s}{'행':>9s}{'사기율':>9s}{'Recall':>9s}{'Precision':>11s}{'PR-AUC':>9s}")
-    for code, idx in test.groupby("ProductCD", observed=True).groups.items():
-        # test.index는 0부터가 아니라 472432부터다. 라벨을 위치로 바꿔야 점수와 맞물린다.
-        pos = test.index.get_indexer(idx)
+    for code, idx in product.groupby(product, observed=True).groups.items():
+        # product.index는 0부터가 아니라 472432부터다. 라벨을 위치로 바꿔야 점수와 맞물린다.
+        pos = product.index.get_indexer(idx)
         yy, ss = y["test"].to_numpy()[pos], score["test"][pos]
         if yy.sum() == 0:
             print(f"{str(code):<11s}{len(yy):>9,}  사기 거래 없음")

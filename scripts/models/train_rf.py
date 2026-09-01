@@ -17,9 +17,8 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.data.loader import REPO_ROOT
 from src.models.rf import feature_importance, train_rf
-from src.models.runner import OUT_DIR, prepare, report
+from src.models.runner import OUT_DIR, prepare, report, short_path
 
 
 def main(final: bool) -> None:
@@ -48,7 +47,7 @@ def main(final: bool) -> None:
     # MDI는 값 종류가 많은 컬럼을 과대평가한다. card1(12,242종)이 있어 실제로 걸린다.
     # 순위를 그대로 읽지 말고 참고용으로만 본다(src/models/rf.py 설명 참조).
     report(p, trained, model_block, stem, importance=feature_importance(trained, top=15))
-    print(f"      {model_path.relative_to(REPO_ROOT)}  ({size / 1e6:,.1f} MB)")
+    print(f"      {short_path(model_path)}  ({size / 1e6:,.1f} MB)")
 
 
 if __name__ == "__main__":

@@ -17,8 +17,7 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.data.loader import REPO_ROOT
-from src.models.runner import OUT_DIR, prepare, report
+from src.models.runner import OUT_DIR, prepare, report, short_path
 from src.models.xgb import feature_importance, refit_on_all, train_xgb
 
 
@@ -60,7 +59,7 @@ def main(final: bool) -> None:
     # "얼마나 자주 썼나"와 "총 기여가 얼마나"는 다른 순위를 준다. 둘 다 찍는다.
     # 어느 쪽도 "이 컬럼이 없으면 얼마나 나빠지나"는 아니다 — 그건 순열로만 나온다.
     report(p, trained, model_block, stem, importance=feature_importance(trained, top=15))
-    print(f"      {model_path.relative_to(REPO_ROOT)}  (나무 {kept:,}그루만 남김)")
+    print(f"      {short_path(model_path)}  (나무 {kept:,}그루만 남김)")
 
 
 if __name__ == "__main__":
