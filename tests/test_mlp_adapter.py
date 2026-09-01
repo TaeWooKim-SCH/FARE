@@ -41,6 +41,12 @@ def raw_frame(n=300):
     card2 = rng.integers(100, 600, n).astype(float)
     card2[::7] = np.nan
 
+    # 60%가 0이고 0이 최솟값이라 중앙값 == 최솟값이 된다. 실제 학습셋에서 394개 중
+    # 247개가 이 모양이라, 채운 값이 어디로 가는지 보려면 이런 컬럼이 있어야 한다.
+    묶임 = np.zeros(n)
+    묶임[int(n * 0.6) :] = rng.gamma(2, 5, n - int(n * 0.6))
+    묶임[::11] = np.nan
+
     return pd.DataFrame(
         {
             "TransactionID": np.arange(n),
@@ -55,6 +61,7 @@ def raw_frame(n=300):
             "V1": v1,
             "V2": v2,
             "V3": v3,
+            "묶임": 묶임,
         }
     )
 
@@ -133,8 +140,8 @@ def test_분위수_경계를_검증셋으로_다시_맞추지_않는다(준비):
 def test_결측_자리가_같은_컬럼은_표시를_하나만_만든다(준비):
     """V1과 V2는 같은 행에서 같이 비므로 표시 컬럼 두 개는 복사본이다."""
     adapter, _, _ = 준비
-    assert adapter.missing_groups == (("card2",), ("V1", "V2"), ("V3",))
-    assert adapter.missing_flags == ("card2", "V1", "V3")
+    assert adapter.missing_groups == (("card2",), ("V1", "V2"), ("V3",), ("묶임",))
+    assert adapter.missing_flags == ("card2", "V1", "V3", "묶임")
     assert "V2_결측" not in adapter.feature_columns
 
 
@@ -161,11 +168,36 @@ def test_결측이_하나도_안_남는다(준비):
         assert not adapter.apply(frame).isna().to_numpy().any()
 
 
-def test_채운_값이_학습셋_중앙값_자리다(준비):
-    """분위수 변환 출력이 정규분포 모양이라 0이 50번째 백분위수 자리다."""
+def test_채운_자리는_출력_0이_된다(준비):
     adapter, X_train, _ = 준비
     나온것 = adapter.apply(X_train)
     assert (나온것.loc[X_train["V1"].isna(), "V1"] == 0.0).all()
+
+
+def test_되돌리면_0이_학습셋_중앙값을_가리킨다(준비):
+    """0이 '중앙 순위 자리'라는 주장의 절반. 이 방향은 성립한다."""
+    adapter, X_train, _ = 준비
+    자리 = list(adapter.quantile_columns).index("금액")
+    되돌림 = adapter.quantile.inverse_transform(np.zeros((1, len(adapter.quantile_columns))))
+    assert 되돌림[0][자리] == pytest.approx(X_train["금액"].median())
+
+
+def test_채운_행과_중앙값을_관측한_행이_같은_자리에_안_온다(준비):
+    """나머지 절반은 성립하지 않는다. 분위수 변환이 컬럼 최솟값을 분위수 0으로 못 박고
+    정규분포 ppf가 거기서 발산해 -5.199로 잘리기 때문이다. 중앙값이 곧 최솟값인 컬럼에서
+    갈리는데, 실제 학습셋에서 394개 중 247개가 그 모양이다.
+
+    알고도 그대로 두는 선택이다(모듈 설명 참조). 모르고 바뀌는 일이 없게 고정한다.
+    """
+    adapter, X_train, _ = 준비
+    중앙값 = X_train["묶임"].median()
+    assert 중앙값 == X_train["묶임"].min()  # 전제가 성립하는지 먼저 확인
+
+    나온것 = adapter.apply(X_train)
+    채운행 = 나온것.loc[X_train["묶임"].isna(), "묶임"].iloc[0]
+    관측행 = 나온것.loc[X_train["묶임"] == 중앙값, "묶임"].iloc[0]
+    assert 채운행 == 0.0
+    assert 관측행 < -1.0  # 같은 값을 뜻하는데 출력 공간의 다른 쪽 끝에 있다
 
 
 # ── hour ────────────────────────────────────────────────────────────────────
@@ -196,6 +228,28 @@ def test_컬럼_순서가_학습_때와_같다(준비):
 def test_같은_입력이면_같은_출력이_나온다(준비):
     adapter, X_train, _ = 준비
     assert np.array_equal(adapter.apply(X_train).to_numpy(), adapter.apply(X_train).to_numpy())
+
+
+def test_한_컬럼을_원핫과_빈도에_동시에_넣을_수_없다():
+    """id_columns에 글자 컬럼을 적으면 fit이 조용히 통과하고 apply에서 컬럼 수가 어긋나
+    죽었다. 그 자리에서 이름을 대고 막는다.
+    """
+    frame = raw_frame()
+    pre = fit_preprocessor(frame.iloc[:250])
+    나쁜설정 = {"seed": 42, "mlp": {"onehot_max_values": 10, "id_columns": ["상품"]}}
+    with pytest.raises(ValueError, match="양쪽에 넣을 수 없습니다: \\['상품'\\]"):
+        fit_mlp_adapter(pre.apply(frame.iloc[:250]), pre, 나쁜설정)
+
+
+def test_만든_규칙을_밖에서_못_고친다(준비):
+    """Preprocessor.codes와 같은 수준으로 막는다. frozen=True는 필드 재바인딩만 막고
+    dict 내용은 열어두기 때문에 따로 감싸야 한다.
+    """
+    adapter, _, _ = 준비
+    with pytest.raises(TypeError):
+        adapter.onehot["상품"] = ()
+    with pytest.raises(TypeError):
+        adapter.frequency["장치"][9999] = 1
 
 
 def test_빈_학습셋으로는_만들_수_없다():
