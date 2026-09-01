@@ -199,7 +199,7 @@ def fit_mlp_adapter(X_train: pd.DataFrame, pre: Preprocessor, config: dict) -> M
     if X_train.empty:
         raise ValueError("빈 학습셋으로는 어댑터를 만들 수 없습니다.")
 
-    mlp_cfg = config["mlp"]
+    mlp_cfg = config["mlp"]["input"]
     id_columns = [c for c in mlp_cfg["id_columns"] if c in X_train.columns]
 
     category = [c for c in X_train.columns if c in pre.category_columns]

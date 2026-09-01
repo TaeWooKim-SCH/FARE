@@ -16,7 +16,7 @@ from src.models.preprocess import fit_preprocessor
 
 CONFIG = {
     "seed": 42,
-    "mlp": {"onehot_max_values": 10, "id_columns": ["card1", "card2"]},
+    "mlp": {"input": {"onehot_max_values": 10, "id_columns": ["card1", "card2"]}},
 }
 
 VAL_ONLY = "검증셋에만"
@@ -236,7 +236,7 @@ def test_한_컬럼을_원핫과_빈도에_동시에_넣을_수_없다():
     """
     frame = raw_frame()
     pre = fit_preprocessor(frame.iloc[:250])
-    나쁜설정 = {"seed": 42, "mlp": {"onehot_max_values": 10, "id_columns": ["상품"]}}
+    나쁜설정 = {"seed": 42, "mlp": {"input": {"onehot_max_values": 10, "id_columns": ["상품"]}}}
     with pytest.raises(ValueError, match="양쪽에 넣을 수 없습니다: \\['상품'\\]"):
         fit_mlp_adapter(pre.apply(frame.iloc[:250]), pre, 나쁜설정)
 

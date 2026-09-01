@@ -10,8 +10,13 @@
 
 어댑터가 지키는 약속은 둘뿐이다.
 
-    fit_*(X_train) -> 어댑터        규칙은 학습셋에서만 만든다
-    어댑터.apply(X) -> DataFrame    만든 규칙을 적용만 한다
+    fit_*(X_train, pre, config) -> 어댑터    규칙은 학습셋에서만 만든다
+    어댑터.apply(X) -> DataFrame             만든 규칙을 적용만 한다
+
+`fit_*`의 인자가 셋인 이유는 MLP 어댑터가 그만큼을 필요로 해서다. 공통 전처리를 거치면
+컬럼이 전부 정수라서 프레임만 봐서는 ProductCD(코드)와 card3(값)를 구분할 수 없어
+`pre`가 필요하고, 원핫 기준과 식별자 목록이 `config`에서 온다. `PassThrough`는 둘 다
+안 쓰지만 `runner`가 어댑터를 갈아 끼우려면 모양이 같아야 한다.
 
 XGBoost와 Random Forest는 여기서 아무것도 안 한다(`PassThrough`). 트리에는 필요가 없어서다.
 
@@ -57,8 +62,12 @@ class PassThrough:
         return X
 
 
-def fit_pass_through(X_train: pd.DataFrame) -> PassThrough:
-    """학습셋의 컬럼 구성만 기억한다. 값은 보지 않으므로 누수가 생길 자리가 없다."""
+def fit_pass_through(X_train: pd.DataFrame, pre=None, config=None) -> PassThrough:
+    """학습셋의 컬럼 구성만 기억한다. 값은 보지 않으므로 누수가 생길 자리가 없다.
+
+    `pre`와 `config`를 받고도 안 쓴다. 세 어댑터가 같은 모양이어야 `runner.prepare`가
+    하나로 부를 수 있어서다. 여기서 값을 안 본다는 것 자체가 트리 쪽 명세다.
+    """
     if X_train.empty:
         raise ValueError("빈 학습셋으로는 어댑터를 만들 수 없습니다.")
     return PassThrough(feature_columns=tuple(X_train.columns))
