@@ -121,6 +121,21 @@ def test_조기_종료_조각은_학습셋_안에서_시간순으로_나온다(�
     assert len(p.X["stop"]) == pytest.approx(len(p.X["train"]) * 0.15, rel=0.05)
 
 
+def test_어댑터에_학습셋만_넘긴다(합성데이터):
+    """MLP 어댑터는 빈도표·분위수 경계 같은 학습셋 통계를 들고 있다. 여기에 다른 조각이
+    들어오면 그대로 누수가 되므로, 무엇을 받았는지 붙잡아 확인한다.
+    """
+    받은행수 = []
+
+    def 엿보는어댑터(X_train, pre, config):
+        받은행수.append(len(X_train))
+        return runner.fit_pass_through(X_train, pre, config)
+
+    p = runner.prepare(final=True, stop_split=True, fit_adapter=엿보는어댑터)
+    assert 받은행수 == [len(p.X["train"])]
+    assert 받은행수[0] < len(p.X["train"]) + len(p.X["val"]) + len(p.X["test"])
+
+
 def test_조기_종료_조각을_안_만들_수도_있다(합성데이터):
     """Random Forest는 조기 종료가 없다. 안 쓸 조각을 만들면 메모리만 한 번 더 잡는다."""
     p = runner.prepare(final=False, stop_split=False)

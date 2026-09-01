@@ -65,3 +65,16 @@ def test_모르는_컬럼이_끼어들면_거부한다():
 def test_빈_학습셋으로는_만들_수_없다():
     with pytest.raises(ValueError, match="빈 학습셋"):
         fit_pass_through(pd.DataFrame())
+
+
+def test_어댑터_만드는_함수의_모양이_같다():
+    """`runner.prepare`가 어댑터를 갈아 끼우려면 인자 이름과 순서가 같아야 한다.
+    한쪽만 바꾸면 프레임을 엉뚱한 자리로 넘겨도 파이썬이 안 잡아준다.
+    """
+    import inspect
+
+    from src.models.mlp_adapter import fit_mlp_adapter
+
+    기대 = ["X_train", "pre", "config"]
+    assert list(inspect.signature(fit_pass_through).parameters) == 기대
+    assert list(inspect.signature(fit_mlp_adapter).parameters) == 기대

@@ -19,7 +19,7 @@ import pandas as pd
 
 from src.data.loader import REPO_ROOT, load_config, load_merged
 from src.data.split import split_tail, time_split
-from src.models.adapter import PassThrough, fit_pass_through
+from src.models.adapter import fit_pass_through
 from src.models.metrics import choose_threshold, evaluate_at, rank_metrics
 from src.models.preprocess import Preprocessor, fit_preprocessor, target_of
 
@@ -47,7 +47,9 @@ class Prepared:
     """
 
     pre: Preprocessor
-    adapter: PassThrough
+    # 트리는 PassThrough, MLP는 MlpAdapter가 들어온다. apply(X) 하나만 지키면 되므로
+    # 형을 좁히지 않는다. 좁히면 어댑터를 늘릴 때마다 여기를 고쳐야 한다.
+    adapter: object
     X: dict[str, pd.DataFrame]
     y: dict[str, pd.Series]
     data_cfg: dict
@@ -57,12 +59,16 @@ class Prepared:
     product: pd.Series | None
 
 
-def prepare(final: bool, stop_split: bool = True) -> Prepared:
+def prepare(final: bool, stop_split: bool = True, fit_adapter=fit_pass_through) -> Prepared:
     """데이터를 읽어 시간순으로 자르고 전처리까지 끝낸다.
 
     `stop_split`은 학습셋 뒤쪽을 조기 종료용으로 떼어낼지 정한다. XGBoost는 나무 수를
-    정하려고 필요하지만 Random Forest는 조기 종료가 없어서 안 쓴다. 안 쓰는 조각을 굳이
-    만들면 학습셋 크기만큼 메모리를 한 번 더 잡는다.
+    정하려고 필요하지만 Random Forest와 MLP는 조기 종료가 없어서 안 쓴다. 안 쓰는 조각을
+    굳이 만들면 학습셋 크기만큼 메모리를 한 번 더 잡는다.
+
+    `fit_adapter`는 모델별 입력 변환을 만든다. 기본값은 값을 안 건드리는 트리용이고,
+    MLP는 `fit_mlp_adapter`를 넘긴다. **어느 어댑터를 넣든 학습셋만 보고 만든다** —
+    아래에서 넘기는 것이 `applied["train"]` 하나뿐이라 다른 조각에 닿을 자리가 없다.
     """
     data_cfg = load_config("config/data.yaml")
     model_cfg = load_config("config/model.yaml")
@@ -82,7 +88,7 @@ def prepare(final: bool, stop_split: bool = True) -> Prepared:
     # 규칙은 학습셋에서만 만든다. 나머지에는 적용만 한다.
     pre = fit_preprocessor(split.train)
     applied = {name: pre.apply(part) for name, part in parts.items()}
-    adapter = fit_pass_through(applied["train"])
+    adapter = fit_adapter(applied["train"], pre, model_cfg)
 
     X = {name: adapter.apply(frame) for name, frame in applied.items()}
     y = {name: target_of(part) for name, part in parts.items()}
