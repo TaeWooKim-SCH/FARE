@@ -15,5 +15,8 @@ scikit-learn==1.9.0   # PR-AUC·ROC-AUC와 임계값 후보 계산. 3종 모델 
 numpy==2.5.2          # sklearn이 끌고 오지만, 점수 계산에 직접 쓰므로 명시한다
 joblib==1.5.3         # 〃. RandomForest를 파일로 남길 때 직접 쓴다
 
+# 그림
+matplotlib==3.11.1    # PR·ROC 곡선. 발표와 논문에 넣는 그림만 그린다
+
 # 탐지 모델
 xgboost==3.4.1        # 주 모델. 기본 tree_method="auto"가 grow_quantile_histmaker로 풀린다
